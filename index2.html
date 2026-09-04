@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>GlutenGuard — barcode gluten check</title>
+
+<!-- iOS home-screen app -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GlutenGuard">
+<meta name="theme-color" content="#14161A">
+<link id="manifest-link" rel="manifest">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%2314161A'/%3E%3Cg stroke='%232E9E5B' stroke-width='9' stroke-linecap='round'%3E%3Cpath d='M46 52v76M68 52v76M90 52v76M112 52v76M134 52v76'/%3E%3C/g%3E%3C/svg%3E">
+
+<style>
+  :root{
+    --shell:#14161A;
+    --surface:#1E2229;
+    --surface-2:#272C35;
+    --line:#333A45;
+    --ink:#F2F4F7;
+    --ink-dim:#9AA5B4;
+
+    --avoid:#D64545;
+    --avoid-bg:#3A1D1E;
+    --check:#E0A32E;
+    --check-bg:#3A2E14;
+    --clear:#2E9E5B;
+    --clear-bg:#16311F;
+    --plain:#4E9CC4;
+    --plain-bg:#13293A;
+    --unknown:#7A8798;
+    --unknown-bg:#252A31;
+
+    --pad:16px;
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bot:env(safe-area-inset-bottom,0px);
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--shell);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+  }
+  button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+  input{font:inherit}
+
+  /* ---------- shell ---------- */
+  #app{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;
+  }
+
+  header{
+    padding:calc(var(--safe-top) + 10px) var(--pad) 10px;
+    display:flex;align-items:baseline;gap:10px;
+    border-bottom:1px solid var(--line);
+    background:var(--shell);
+  }
+  header h1{
+    margin:0;font-size:17px;font-weight:650;letter-spacing:-0.01em;
+  }
+  header .sub{font-size:12.5px;color:var(--ink-dim)}
+
+  /* ---------- camera stage ---------- */
+  #stage{
+    position:relative;
+    flex:1 1 auto;
+    min-height:0;
+    background:#0C0E11;
+    overflow:hidden;
+  }
+  #video{
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;
+    background:#0C0E11;
+  }
+  #video.hidden{opacity:0}
+
+  /* reticle */
+  #reticle{
+    position:absolute;left:6%;right:6%;top:50%;transform:translateY(-50%);
+    height:34%;
+    border-radius:14px;
+    box-shadow:0 0 0 100vmax rgba(12,14,17,.55);
+    pointer-events:none;
+    transition:box-shadow .18s ease;
+  }
+  #reticle::before,#reticle::after{
+    content:"";position:absolute;left:0;right:0;height:2px;background:rgba(242,244,247,.28)
+  }
+  #reticle::before{top:0}
+  #reticle::after{bottom:0}
+  .corner{position:absolute;width:26px;height:26px;border:3px solid #F2F4F7;opacity:.9}
+  .c1{top:-1px;left:-1px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
+  .c2{top:-1px;right:-1px;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
+  .c3{bottom:-1px;left:-1px;border-right:0;border-top:0;border-radius:0 0 0 14px}
+  .c4{bottom:-1px;right:-1px;border-left:0;border-top:0;border-radius:0 0 14px 0}
+  #reticle.hit{box-shadow:0 0 0 100vmax rgba(12,14,17,.75), inset 0 0 0 3px var(--clear)}
+
+  /* idle / message layer over camera */
+  #stage-msg{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;text-align:center;padding:28px;
+  }
+  #stage-msg.hide{display:none}
+  #stage-msg p{margin:0;color:var(--ink-dim);max-width:30ch;font-size:14px}
+  .bars{display:flex;gap:5px;align-items:flex-end;height:52px}
+  .bars i{display:block;width:4px;background:var(--clear);border-radius:2px}
+
+  #hint{
+    position:absolute;left:0;right:0;bottom:12px;text-align:center;
+    font-size:13px;color:rgba(242,244,247,.75);
+    text-shadow:0 1px 4px rgba(0,0,0,.6);
+    padding:0 20px;pointer-events:none;
+  }
+
+  #torch{
+    position:absolute;top:12px;right:12px;
+    width:44px;height:44px;border-radius:50%;
+    background:rgba(20,22,26,.7);backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;font-size:19px;
+  }
+  #torch.on{background:rgba(224,163,46,.9)}
+
+  /* ---------- controls ---------- */
+  #controls{
+    flex:0 0 auto;
+    display:flex;gap:8px;align-items:stretch;
+    padding:10px var(--pad) calc(10px + var(--safe-bot));
+    border-top:1px solid var(--line);
+    background:var(--shell);
+  }
+  .btn{
+    flex:1;min-height:52px;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    font-weight:600;font-size:15px;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    transition:transform .08s ease, background .15s ease;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:var(--clear);border-color:var(--clear);color:#07130C}
+  .btn.stop{background:var(--surface-2);color:var(--ink)}
+  .btn.narrow{flex:0 0 76px}
+  .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+  /* ---------- result sheet ---------- */
+  #sheet{
+    position:absolute;left:0;right:0;bottom:0;top:auto;
+    max-height:88%;
+    background:var(--surface);
+    border-radius:20px 20px 0 0;
+    border-top:1px solid var(--line);
+    transform:translateY(101%);
+    transition:transform .26s cubic-bezier(.2,.8,.2,1);
+    display:flex;flex-direction:column;
+    z-index:5;
+    box-shadow:0 -18px 40px rgba(0,0,0,.45);
+  }
+  #sheet.up{transform:translateY(0)}
+  @media (prefers-reduced-motion:reduce){
+    #sheet{transition:none}
+  }
+  #grip{
+    flex:0 0 auto;padding:9px 0 3px;display:flex;justify-content:center;
+  }
+  #grip span{width:38px;height:4px;border-radius:2px;background:var(--line)}
+
+  #verdict{
+    padding:10px var(--pad) 16px;
+    border-bottom:1px solid var(--line);
+  }
+  .vhead{display:flex;align-items:center;gap:10px}
+  .vdot{
+    flex:0 0 auto;width:30px;height:30px;border-radius:9px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:17px;font-weight:700;
+  }
+  .vtitle{
+    font-size:27px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;margin:0;
+  }
+  .vwhy{margin:8px 0 0;font-size:14.5px;color:var(--ink-dim)}
+
+  #product{padding:14px var(--pad);display:flex;gap:12px;border-bottom:1px solid var(--line)}
+  #pimg{
+    flex:0 0 58px;height:58px;border-radius:10px;background:var(--surface-2);
+    object-fit:contain;border:1px solid var(--line)
+  }
+  #pname{font-size:17px;font-weight:600;margin:0;letter-spacing:-0.01em}
+  #pmeta{margin:3px 0 0;font-size:13px;color:var(--ink-dim)}
+
+  #detail{
+    flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:0 var(--pad) calc(20px + var(--safe-bot));
+  }
+  .block{padding:14px 0;border-bottom:1px solid var(--line)}
+  .block:last-child{border-bottom:0}
+  .block h3{margin:0 0 8px;font-size:13.5px;font-weight:650;color:var(--ink-dim)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    font-size:13px;padding:5px 9px;border-radius:8px;
+    background:var(--surface-2);border:1px solid var(--line)
+  }
+  .chip.bad{background:var(--avoid-bg);border-color:#6B2C2E;color:#FFC9C9}
+  .chip.warn{background:var(--check-bg);border-color:#6B5320;color:#FFE0A3}
+  .chip.good{background:var(--clear-bg);border-color:#25603C;color:#A9EBC4}
+  #ing{font-size:14px;color:var(--ink-dim);line-height:1.55;word-break:break-word}
+  #ing mark{background:transparent;padding:0 1px;border-radius:3px}
+  #ing mark.bad{background:rgba(214,69,69,.28);color:#FFD3D3}
+  #ing mark.warn{background:rgba(224,163,46,.24);color:#FFE6B8}
+
+  .rowbtns{display:flex;gap:8px;margin-top:4px}
+  .mini{
+    flex:1;padding:11px 8px;border-radius:10px;border:1px solid var(--line);
+    background:var(--surface-2);font-size:14px;font-weight:600;text-align:center;
+  }
+  .mini.act-safe.on{background:var(--clear-bg);border-color:#2E9E5B;color:#A9EBC4}
+  .mini.act-avoid.on{background:var(--avoid-bg);border-color:#D64545;color:#FFC9C9}
+
+  .note{
+    font-size:13px;color:var(--ink-dim);background:var(--surface-2);
+    border:1px solid var(--line);border-left:3px solid var(--check);
+    padding:10px 12px;border-radius:8px;margin-top:10px;
+  }
+  a.link{color:#8FC7E8;text-decoration:underline;text-underline-offset:2px}
+
+  /* ---------- scanLog / manual panels ---------- */
+  .panel{
+    position:absolute;inset:0;z-index:8;background:var(--shell);
+    display:none;flex-direction:column;
+  }
+  .panel.open{display:flex}
+  .ptop{
+    display:flex;align-items:center;gap:10px;
+    padding:14px var(--pad);
+    border-bottom:1px solid var(--line)
+  }
+  .ptop h2{margin:0;font-size:17px;font-weight:650;flex:1}
+  .pbody{flex:1;overflow-y:auto;padding:var(--pad);padding-bottom:calc(24px + var(--safe-bot))}
+  .close{width:38px;height:38px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:18px}
+
+  #code-input{
+    width:100%;padding:15px 14px;border-radius:12px;
+    background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    font-size:19px;letter-spacing:.06em;font-variant-numeric:tabular-nums;
+  }
+  #code-input:focus{outline:2px solid var(--clear);outline-offset:1px}
+
+  .hitem{
+    display:flex;gap:11px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);
+    width:100%;text-align:left;
+  }
+  .hdot{flex:0 0 auto;width:10px;height:10px;border-radius:50%}
+  .hname{display:block;font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hmeta{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:1px;font-variant-numeric:tabular-nums}
+  .empty{color:var(--ink-dim);font-size:14px;padding:30px 0;text-align:center}
+
+  .disclaimer{
+    font-size:12.5px;color:var(--ink-dim);line-height:1.6;
+    border-top:1px solid var(--line);margin-top:22px;padding-top:14px;
+  }
+
+  /* toast */
+  #toast{
+    position:absolute;left:50%;bottom:96px;transform:translate(-50%,14px);
+    background:var(--surface-2);border:1px solid var(--line);
+    padding:10px 15px;border-radius:11px;font-size:14px;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:20;
+    max-width:82%;text-align:center;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  .spin{
+    width:26px;height:26px;border-radius:50%;
+    border:3px solid var(--line);border-top-color:var(--clear);
+    animation:sp .8s linear infinite;
+  }
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1>GlutenGuard</h1>
+    <span class="sub">celiac barcode check</span>
+  </header>
+
+  <div id="stage">
+    <video id="video" playsinline muted autoplay></video>
+
+    <div id="reticle" hidden>
+      <span class="corner c1"></span><span class="corner c2"></span>
+      <span class="corner c3"></span><span class="corner c4"></span>
+    </div>
+
+    <button id="torch" aria-label="Toggle flashlight">🔦</button>
+
+    <div id="stage-msg">
+      <div class="bars" aria-hidden="true">
+        <i style="height:52px"></i><i style="height:30px"></i><i style="height:44px"></i>
+        <i style="height:18px"></i><i style="height:52px"></i><i style="height:36px"></i>
+        <i style="height:26px"></i><i style="height:48px"></i>
+      </div>
+      <p id="stage-text">Point the camera at a barcode to check it for gluten. Tap Scan to turn the camera on.</p>
+    </div>
+
+    <p id="hint" hidden>Hold the barcode inside the frame, about 15 cm away</p>
+
+    <!-- result sheet -->
+    <section id="sheet" aria-live="polite">
+      <div id="grip"><span></span></div>
+      <div id="verdict">
+        <div class="vhead">
+          <span class="vdot" id="vdot">?</span>
+          <h2 class="vtitle" id="vtitle">Checking…</h2>
+        </div>
+        <p class="vwhy" id="vwhy"></p>
+      </div>
+      <div id="product">
+        <img id="pimg" alt="" hidden>
+        <div>
+          <p id="pname">—</p>
+          <p id="pmeta"></p>
+        </div>
+      </div>
+      <div id="detail"></div>
+    </section>
+
+    <!-- manual entry -->
+    <div class="panel" id="manual-panel">
+      <div class="ptop">
+        <h2>Enter a barcode</h2>
+        <button class="close" data-close="manual-panel" aria-label="Close">✕</button>
+      </div>
+      <div class="pbody">
+        <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*"
+               placeholder="0 12345 67890 5" autocomplete="off">
+        <div class="rowbtns" style="margin-top:12px">
+          <button class="mini" id="code-go" style="background:var(--clear);border-color:var(--clear);color:#07130C">Check this code</button>
+        </div>
+        <p style="font-size:13px;color:var(--ink-dim);margin-top:14px">
+          Type the digits printed under the barcode. Useful when the code is scuffed, curved, or the lighting is bad.
+        </p>
+      </div>
+    </div>
+
+    <!-- scanLog -->
+    <div class="panel" id="scanLog-panel">
+      <div class="ptop">
+        <h2>Recent scans</h2>
+        <button class="close" id="clear-hist" style="width:auto;padding:0 12px;font-size:14px">Clear</button>
+        <button class="close" data-close="scanLog-panel" aria-label="Close">✕</button>
+      </div>
+      <div class="pbody" id="scanLog-body"></div>
+    </div>
+
+    <div id="toast" role="status"></div>
+  </div>
+
+  <div id="controls">
+    <button class="btn primary" id="scan-btn">Scan</button>
+    <button class="btn narrow" id="manual-btn" aria-label="Enter barcode manually">123</button>
+    <button class="btn narrow" id="scanLog-btn" aria-label="Recent scans">List</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   GlutenGuard
+   Single-file PWA. Camera barcode scan -> Open Food Facts
+   lookup -> gluten rule engine -> plain-language verdict.
+   ============================================================ */
+
+/* ---------- small helpers ---------- */
+const $ = s => document.querySelector(s);
+const el = {
+  video: $('#video'), stage: $('#stage'), stageMsg: $('#stage-msg'), stageText: $('#stage-text'),
+  reticle: $('#reticle'), hint: $('#hint'), torch: $('#torch'),
+  sheet: $('#sheet'), vdot: $('#vdot'), vtitle: $('#vtitle'), vwhy: $('#vwhy'),
+  pimg: $('#pimg'), pname: $('#pname'), pmeta: $('#pmeta'), detail: $('#detail'),
+  scanBtn: $('#scan-btn'), toast: $('#toast'), histBody: $('#scanLog-body')
+};
+
+function toast(msg, ms = 2200){
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.toast.classList.remove('show'), ms);
+}
+
+/* localStorage that never throws (some in-app browsers block it) */
+const store = (() => {
+  let ok = true;
+  try { localStorage.setItem('__gg', '1'); localStorage.removeItem('__gg'); }
+  catch (e) { ok = false; }
+  const mem = {};
+  return {
+    get(k, d){
+      try { const v = ok ? localStorage.getItem(k) : mem[k]; return v ? JSON.parse(v) : d; }
+      catch(e){ return d; }
+    },
+    set(k, v){
+      try { const s = JSON.stringify(v); if (ok) localStorage.setItem(k, s); else mem[k] = s; }
+      catch(e){}
+    }
+  };
+})();
+
+/* ============================================================
+   1. GLUTEN RULE ENGINE
+   ============================================================ */
+
+/* Confusable phrases are swapped for sentinel tokens BEFORE matching,
+   so "buckwheat" never trips the "wheat" rule and "maltodextrin"
+   never trips the "malt" rule. */
+const SENTINELS = [
+  [/buck\s?wheat/g,            ' zzbkw '],
+  [/gluten[\s-]?free/g,        ' zzgfclaim '],
+  [/no\s+gluten/g,             ' zzgfclaim '],
+  [/sans\s+gluten/g,           ' zzgfclaim '],
+  [/wheat\s?grass/g,           ' zzwgrass '],
+  [/wheat[\s-]?free/g,         ' zzwfree '],
+  [/maltodextrin/g,            ' zzmdex '],
+  [/malt(itol|ose|ol|ase)/g,   ' zzmsug '],
+  [/rice\s+malt/g,             ' zzrmalt '],
+  [/corn\s+malt/g,             ' zzrmalt '],
+  [/malic\s+acid/g,            ' zzmacid '],
+  [/\boat\s?meal\b|\boat\s?flour\b|\boat\s?fib(er|re)\b|\boats\b|\boat\b|\bavena\b/g, ' zzoat ']
+];
+
+/* Ingredients that mean gluten, full stop. */
+const GLUTEN = [
+  ['wheat','wheat'], ['durum','durum wheat'], ['semolina','semolina'], ['semola','semola'],
+  ['farina','farina'], ['graham','graham flour'], ['spelt','spelt'], ['farro','farro'],
+  ['emmer','emmer'], ['einkorn','einkorn'], ['kamut','kamut'], ['khorasan','khorasan wheat'],
+  ['triticale','triticale'], ['triticum','triticum (wheat)'], ['barley','barley'],
+  ['hordeum','hordeum (barley)'], ['\\brye\\b','rye'], ['secale','secale (rye)'],
+  ['\\bmalt\\b','malt'], ['malted','malted grain'], ['malt extract','malt extract'],
+  ['malt syrup','malt syrup'], ['malt vinegar','malt vinegar'],
+  ["brewer'?s? yeast",'brewer’s yeast'], ['\\bgluten\\b','gluten'],
+  ['seitan','seitan'], ['bulg(u|h)r','bulgur'], ['couscous','couscous'],
+  ['freekeh|frikeh','freekeh'], ['matza|matzo|matzah','matzo'], ['panko','panko'],
+  ['\\brusk\\b','rusk'], ['bread\\s?crumb','breadcrumbs'], ['crouton','croutons'],
+  ['cracker meal','cracker meal'], ['\\borzo\\b','orzo'], ['\\budon\\b','udon'],
+  ['\\bmaida\\b','maida (wheat flour)'], ['\\batta\\b','atta (wheat flour)'],
+  ['\\bsuji\\b|\\bsooji\\b|\\brava\\b','suji/rava (semolina)'],
+  ['\\bbeer\\b|\\bale\\b|lager|stout|porter','beer/malt beverage'],
+  ['\\broux\\b','roux']
+];
+
+/* Ingredients that need a human to check the label or call the maker. */
+const CAUTION = [
+  ['zzoat','oats — safe only if certified gluten-free'],
+  ['zzmdex','maltodextrin — corn-based in the US, can be wheat-based in the EU'],
+  ['zzmsug','maltose/maltitol — usually corn, occasionally barley'],
+  ['zzrmalt','rice/corn malt syrup — check the malt source'],
+  ['zzwfree','labelled wheat-free, which does not mean gluten-free'],
+  ['zzwgrass','wheatgrass — safe only if cut before the grain forms'],
+  ['natural flavo(u)?r','natural flavour — source not stated'],
+  ['artificial flavo(u)?r','artificial flavour — source not stated'],
+  ['modified (food )?starch','modified starch — check the grain'],
+  ['\\bdextrin\\b','dextrin — can be wheat-derived'],
+  ['yeast extract','yeast extract — can be barley-derived'],
+  ['autoly(z|s)ed yeast','autolysed yeast'],
+  ['soy(a)? sauce|shoyu','soy sauce — normally brewed with wheat'],
+  ['tamari','tamari — usually gluten-free, verify the bottle'],
+  ['teriyaki|hoisin','teriyaki/hoisin — usually contains soy sauce'],
+  ['\\bmiso\\b','miso — often made with barley'],
+  ['hydroly(z|s)ed (vegetable|plant|wheat)? ?protein','hydrolysed protein — check the grain'],
+  ['caramel colo(u)?r','caramel colour — barley-derived in some countries'],
+  ['glucose syrup','glucose syrup — usually fine, can be wheat-derived'],
+  ['\\bsurimi\\b|imitation crab','surimi — usually bound with wheat starch'],
+  ['licorice|liquorice','licorice — usually contains wheat flour'],
+  ['\\bsoba\\b','soba — often cut with wheat flour'],
+  ['\\bbroth\\b|bouillon|\\bstock\\b|\\bgravy\\b','broth/gravy — often thickened with wheat'],
+  ['seasoning|spice blend','seasoning blend — carrier not stated'],
+  ['may contain|shared equipment|same facility|processed in a facility','a cross-contact warning on the pack']
+];
+
+function normalise(t){
+  let s = ' ' + String(t || '').toLowerCase() + ' ';
+  s = s.replace(/[\u2010-\u2015\u2018\u2019]/g, m => (m === '\u2018' || m === '\u2019') ? "'" : '-');
+  s = s.replace(/[\(\)\[\]\{\},.;:*]/g, ' ').replace(/\s+/g, ' ');
+  for (const [re, tok] of SENTINELS) s = s.replace(re, tok);
+  return s;
+}
+
+function findAll(text, list){
+  const hits = [], seen = new Set();
+  for (const [pat, label] of list){
+    if (seen.has(label)) continue;
+    if (new RegExp(pat, 'i').test(text)){ hits.push(label); seen.add(label); }
+  }
+  return hits;
+}
+
+/* Verdict levels, worst to best. */
+const LEVELS = {
+  avoid:   { key:'avoid',   title:'Contains gluten', mark:'✕', c:'var(--avoid)',   bg:'var(--avoid-bg)' },
+  check:   { key:'check',   title:'Check the label', mark:'!', c:'var(--check)',   bg:'var(--check-bg)' },
+  plain:   { key:'plain',   title:'No gluten listed', mark:'~', c:'var(--plain)',  bg:'var(--plain-bg)' },
+  clear:   { key:'clear',   title:'Labelled gluten-free', mark:'✓', c:'var(--clear)', bg:'var(--clear-bg)' },
+  unknown: { key:'unknown', title:'Not in the database', mark:'?', c:'var(--unknown)', bg:'var(--unknown-bg)' }
+};
+
+function assess(p){
+  const tags = [].concat(p.allergens_tags||[], p.traces_tags||[], p.ingredients_analysis_tags||[]).map(String);
+  const labels = (p.labels_tags||[]).map(String);
+  const raw = [p.ingredients_text_en, p.ingredients_text, p.generic_name, p.product_name]
+              .filter(Boolean).join(' . ');
+  const text = normalise(raw);
+
+  const glutenHits  = findAll(text, GLUTEN);
+  const cautionHits = findAll(text, CAUTION);
+
+  const taggedGluten = tags.some(t => /allergens?:en:gluten$|^en:gluten$/.test(t));
+  const tracesGluten = (p.traces_tags||[]).some(t => /gluten/.test(t));
+  const labelledGF   = labels.some(t => /en:(gluten-free|no-gluten|sans-gluten)/.test(t))
+                       || /zzgfclaim/.test(text);
+  const certifiedGF  = labels.some(t => /certified-gluten-free|gluten-free-certified|afdiag|crossed-grain/.test(t));
+
+  const hasIngredients = !!(p.ingredients_text || p.ingredients_text_en);
+
+  let level, why;
+
+  if (taggedGluten || glutenHits.length){
+    level = LEVELS.avoid;
+    why = glutenHits.length
+      ? 'Gluten grain found in the ingredients: ' + glutenHits.slice(0,3).join(', ') + '.'
+      : 'The database records gluten as a declared allergen for this product.';
+    if (labelledGF) why += ' The pack also carries a gluten-free claim, which conflicts — trust the physical label over this app.';
+  } else if (!hasIngredients && !labelledGF){
+    level = LEVELS.unknown;
+    why = 'This barcode is in the database but has no ingredient list, so nothing can be judged.';
+  } else if (labelledGF && !cautionHits.length){
+    level = LEVELS.clear;
+    why = certifiedGF
+      ? 'Carries a third-party gluten-free certification and no flagged ingredients.'
+      : 'Carries a gluten-free claim and no flagged ingredients. Confirm the claim is printed on the pack in front of you.';
+  } else if (tracesGluten || cautionHits.length){
+    level = LEVELS.check;
+    why = tracesGluten && !cautionHits.length
+      ? 'No gluten ingredients, but the product is recorded as carrying a may-contain-gluten warning.'
+      : 'No gluten grain in the list, but ' + cautionHits.length + ' ingredient' + (cautionHits.length>1?'s':'') + ' can hide gluten depending on the maker.';
+    if (labelledGF) why += ' It does carry a gluten-free claim, which resolves most of these.';
+  } else {
+    level = LEVELS.plain;
+    why = 'Nothing in the ingredient list is a gluten grain, but there is no gluten-free claim, so shared equipment is still possible.';
+  }
+
+  return { level, why, glutenHits, cautionHits, tracesGluten, labelledGF, certifiedGF, hasIngredients, raw };
+}
+
+/* ============================================================
+   2. PRODUCT LOOKUP (Open Food Facts)
+   ============================================================ */
+
+const FIELDS = ['code','product_name','product_name_en','generic_name','brands','quantity',
+  'image_front_small_url','image_small_url','ingredients_text','ingredients_text_en',
+  'allergens_tags','traces_tags','labels_tags','categories_tags',
+  'ingredients_analysis_tags','countries_tags'].join(',');
+
+function codeVariants(code){
+  const c = code.replace(/\D/g,'');
+  const out = [c];
+  if (c.length === 12) out.push('0' + c);                 // UPC-A -> EAN-13
+  if (c.length === 13 && c[0] === '0') out.push(c.slice(1));
+  if (c.length === 8) out.push('00000' + c);              // EAN-8 -> EAN-13
+  return [...new Set(out)];
+}
+
+const cache = store.get('gg.cache', {});
+
+async function lookup(code){
+  for (const v of codeVariants(code)){
+    if (cache[v]) return { product: cache[v], offline: true };
+  }
+  let lastErr = null;
+  for (const v of codeVariants(code)){
+    try {
+      const r = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${v}.json?fields=${FIELDS}`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if (!r.ok) { lastErr = new Error('HTTP ' + r.status); continue; }
+      const j = await r.json();
+      if (j && j.status === 1 && j.product){
+        const p = j.product;
+        p.code = p.code || v;
+        cache[v] = p;
+        const keys = Object.keys(cache);
+        if (keys.length > 300) delete cache[keys[0]];
+        store.set('gg.cache', cache);
+        return { product: p, offline: false };
+      }
+    } catch(e){ lastErr = e; }
+  }
+  if (lastErr && !navigator.onLine) throw new Error('offline');
+  return { product: null };
+}
+
+/* ============================================================
+   3. RENDER
+   ============================================================ */
+
+const overrides = store.get('gg.overrides', {});   // code -> 'safe' | 'avoid'
+let scanLog = store.get('gg.history', []);
+let current = null;
+
+function showSheet(){ el.sheet.classList.add('up'); }
+function hideSheet(){
+  el.sheet.classList.remove('up');
+  lastCode = null;
+  if (scanning){
+    paused = false;
+    el.scanBtn.textContent = 'Stop';
+    el.scanBtn.classList.remove('primary'); el.scanBtn.classList.add('stop');
+  }
+}
+
+function renderLoading(code){
+  current = null;
+  el.vdot.textContent = ''; el.vdot.style.background = 'var(--surface-2)';
+  el.vdot.innerHTML = '<span class="spin" style="width:18px;height:18px;border-width:2px"></span>';
+  el.vtitle.textContent = 'Looking up…';
+  el.vwhy.textContent = 'Barcode ' + code;
+  el.pimg.hidden = true; el.pname.textContent = '—'; el.pmeta.textContent = '';
+  el.detail.innerHTML = '';
+  showSheet();
+}
+
+function renderNotFound(code, offline){
+  const L = LEVELS.unknown;
+  paintVerdict(L, offline
+    ? 'You are offline and this barcode is not in the local cache. Read the label on the pack.'
+    : 'This barcode is not in the Open Food Facts database. Nothing is known about it — read the label on the pack.');
+  el.pimg.hidden = true;
+  el.pname.textContent = 'Unknown product';
+  el.pmeta.textContent = code;
+  el.detail.innerHTML = `
+    <div class="block">
+      <h3>What to do</h3>
+      <p style="margin:0;font-size:14px;color:var(--ink-dim)">
+        Read the ingredient list and allergen line on the packaging. Look for a gluten-free claim,
+        then for wheat, barley, rye, oats and malt in the ingredients.
+      </p>
+      <div class="note">You can add this product to the open database so it works for you and everyone else next time.</div>
+      <p style="margin:10px 0 0"><a class="link" target="_blank" rel="noopener"
+        href="https://world.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}">Add ${code} to Open Food Facts</a></p>
+    </div>` + overrideBlock(code) + disclaimerHTML();
+  addHistory({ code, name: 'Unknown product', level: 'unknown', t: Date.now() });
+  beep('unknown');
+}
+
+function paintVerdict(L, why){
+  el.vdot.innerHTML = L.mark;
+  el.vdot.style.background = L.bg;
+  el.vdot.style.color = L.c;
+  el.vtitle.textContent = L.title;
+  el.vtitle.style.color = L.c;
+  el.vwhy.textContent = why;
+  showSheet();
+}
+
+const HL_BAD = ['wheat','barley','rye','malt','malted','spelt','durum','semolina','triticale',
+  'seitan','farro','kamut','couscous','bulgur','graham','matzo','panko','gluten','brewer',
+  'freekeh','emmer','einkorn','breadcrumbs','bread crumbs','croutons','orzo','beer','ale'];
+const HL_WARN = ['oat','oats','oatmeal','oat flour','oat fiber','oat fibre','natural flavor',
+  'natural flavour','natural flavors','natural flavours','artificial flavor','artificial flavour',
+  'artificial flavors','artificial flavours','flavoring','flavouring','flavorings','flavourings',
+  'modified food starch',
+  'modified starch','food starch','starch','dextrin','maltodextrin','yeast extract','soy sauce',
+  'tamari','miso','caramel color','caramel colour','glucose syrup','hydrolyzed','hydrolysed',
+  'may contain','seasoning','broth','bouillon','stock','gravy','surimi','licorice','liquorice'];
+
+/* Longest first so "modified food starch" wins over "starch". */
+const HL_SAFE_TERMS = ['gluten-free','gluten free','wheat-free','wheat free','buckwheat'];
+const HL_RE = new RegExp('\\b(' +
+  [...HL_SAFE_TERMS, ...HL_BAD, ...HL_WARN].sort((a,b) => b.length - a.length)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') +
+  ')\\b', 'gi');
+
+const HL_SAFE = /^(buckwheat|gluten[- ]?free|wheat[- ]?free|wheatgrass)$/i;
+
+function highlightIngredients(raw){
+  // Escape first, then run exactly one pass so no match can land inside a tag.
+  return escapeHTML(raw).replace(HL_RE, m => {
+    if (HL_SAFE.test(m)) return m;
+    const cls = HL_BAD.includes(m.toLowerCase()) ? 'bad' : 'warn';
+    return `<mark class="${cls}">${m}</mark>`;
+  });
+}
+function escapeHTML(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function overrideBlock(code){
+  const o = overrides[code];
+  return `
+  <div class="block">
+    <h3>Your own verdict</h3>
+    <p style="margin:0 0 10px;font-size:14px;color:var(--ink-dim)">
+      If you have read the physical label, save what you found. Your note shows first the next time you scan this.
+    </p>
+    <div class="rowbtns">
+      <button class="mini act-safe ${o==='safe'?'on':''}" data-ov="safe" data-code="${code}">I checked — safe</button>
+      <button class="mini act-avoid ${o==='avoid'?'on':''}" data-ov="avoid" data-code="${code}">I checked — not safe</button>
+    </div>
+  </div>`;
+}
+
+function disclaimerHTML(){
+  return `
+  <div class="block">
+    <p class="disclaimer" style="border:0;margin:0;padding:0">
+      Ingredient data comes from Open Food Facts, an open database edited by the public. It can be
+      wrong, out of date, or from a different regional version of the product. Recipes change without
+      the barcode changing. This app cannot detect cross-contact in a factory. For celiac disease,
+      the printed label and the manufacturer are the only reliable sources — treat every result here
+      as a prompt to check, not as a decision.
+    </p>
+  </div>`;
+}
+
+function render(code, p){
+  const a = assess(p);
+  current = { code, product: p, assess: a };
+
+  const name = p.product_name_en || p.product_name || 'Unnamed product';
+  const ov = overrides[code];
+
+  let L = a.level, why = a.why;
+  if (ov === 'safe'){ L = LEVELS.clear; why = 'You marked this safe after reading the label yourself. ' + a.why; }
+  if (ov === 'avoid'){ L = LEVELS.avoid; why = 'You marked this not safe after reading the label yourself. ' + a.why; }
+
+  paintVerdict(L, why);
+
+  const img = p.image_front_small_url || p.image_small_url;
+  if (img){ el.pimg.src = img; el.pimg.hidden = false; el.pimg.alt = ''; } else el.pimg.hidden = true;
+  el.pname.textContent = name;
+  el.pmeta.textContent = [p.brands, p.quantity, code].filter(Boolean).join(' · ');
+
+  let html = '';
+
+  if (a.glutenHits.length){
+    html += `<div class="block"><h3>Gluten grains found</h3><div class="chips">` +
+      a.glutenHits.map(h => `<span class="chip bad">${escapeHTML(h)}</span>`).join('') + `</div></div>`;
+  }
+  if (a.cautionHits.length){
+    html += `<div class="block"><h3>Worth verifying</h3><div class="chips">` +
+      a.cautionHits.map(h => `<span class="chip warn">${escapeHTML(h)}</span>`).join('') + `</div></div>`;
+  }
+  if (a.labelledGF || a.tracesGluten){
+    html += `<div class="block"><h3>Label claims recorded</h3><div class="chips">` +
+      (a.certifiedGF ? `<span class="chip good">certified gluten-free</span>` : '') +
+      (a.labelledGF && !a.certifiedGF ? `<span class="chip good">gluten-free claim</span>` : '') +
+      (a.tracesGluten ? `<span class="chip warn">may contain gluten</span>` : '') +
+      `</div></div>`;
+  }
+
+  const ing = p.ingredients_text_en || p.ingredients_text;
+  html += `<div class="block"><h3>Ingredients as recorded</h3><div id="ing">` +
+    (ing ? highlightIngredients(ing)
+         : `<em>No ingredient list on file. Read the pack.</em>`) + `</div></div>`;
+
+  html += overrideBlock(code);
+
+  html += `<div class="block"><h3>Check the source</h3>
+    <p style="margin:0"><a class="link" target="_blank" rel="noopener"
+      href="https://world.openfoodfacts.org/product/${encodeURIComponent(p.code||code)}">Open this product on Open Food Facts</a></p>
+    <p style="margin:8px 0 0;font-size:13px;color:var(--ink-dim)">If the data is wrong or stale, you can fix it there and the correction reaches everyone.</p>
+  </div>`;
+
+  html += disclaimerHTML();
+  el.detail.innerHTML = html;
+  el.detail.scrollTop = 0;
+
+  addHistory({ code, name, level: L.key, t: Date.now() });
+  beep(L.key);
+}
+
+/* ---------- scanLog ---------- */
+function addHistory(item){
+  scanLog = scanLog.filter(h => h.code !== item.code);
+  scanLog.unshift(item);
+  if (scanLog.length > 60) scanLog.length = 60;
+  store.set('gg.history', scanLog);
+}
+function renderHistory(){
+  if (!scanLog.length){
+    el.histBody.innerHTML = `<p class="empty">Nothing scanned yet.</p>`;
+    return;
+  }
+  el.histBody.innerHTML = scanLog.map(h => {
+    const L = LEVELS[h.level] || LEVELS.unknown;
+    const d = new Date(h.t);
+    return `<button class="hitem" data-recheck="${h.code}">
+      <span class="hdot" style="background:${L.c}"></span>
+      <span style="min-width:0;flex:1">
+        <span class="hname">${escapeHTML(h.name)}</span>
+        <span class="hmeta">${L.title} · ${h.code} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+      </span>
+    </button>`;
+  }).join('');
+}
+
+/* ---------- audio cue: hear the verdict without looking ---------- */
+let actx = null;
+function beep(kind){
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const seq = {
+      clear:  [[660, 0], [990, .11]],
+      plain:  [[560, 0]],
+      check:  [[420, 0], [420, .16]],
+      avoid:  [[240, 0], [190, .17], [150, .34]],
+      unknown:[[330, 0]]
+    }[kind] || [[440, 0]];
+    for (const [f, t] of seq){
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, actx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.18, actx.currentTime + t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + t + 0.14);
+      o.connect(g).connect(actx.destination);
+      o.start(actx.currentTime + t); o.stop(actx.currentTime + t + 0.16);
+    }
+  } catch(e){}
+  if (navigator.vibrate) navigator.vibrate(kind === 'avoid' ? [60,60,60] : 40);
+}
+
+/* ============================================================
+   4. SCANNER
+   ============================================================ */
+
+let stream = null, scanning = false, paused = false, rafId = null, zxing = null, detector = null;
+let lastCode = null, lastTime = 0;
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+const ZXING_URLS = [
+  'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js',
+  'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'
+];
+
+function loadScript(src){
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = res; s.onerror = () => rej(new Error('load failed ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function initDecoder(){
+  if (detector || zxing) return;
+  // Native decoder (Android Chrome, some desktop). Not on iOS Safari yet.
+  if ('BarcodeDetector' in window){
+    try {
+      const fmts = await window.BarcodeDetector.getSupportedFormats();
+      const want = ['upc_a','upc_e','ean_13','ean_8','code_128'].filter(f => fmts.includes(f));
+      if (want.length){ detector = new window.BarcodeDetector({ formats: want }); return; }
+    } catch(e){}
+  }
+  // Fallback that iPhone actually uses.
+  for (const url of ZXING_URLS){
+    try { await loadScript(url); if (window.ZXing) break; } catch(e){}
+  }
+  if (!window.ZXing) throw new Error('decoder');
+  const hints = new Map();
+  hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    window.ZXing.BarcodeFormat.UPC_A, window.ZXing.BarcodeFormat.UPC_E,
+    window.ZXing.BarcodeFormat.EAN_13, window.ZXing.BarcodeFormat.EAN_8,
+    window.ZXing.BarcodeFormat.CODE_128
+  ]);
+  hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+  zxing = new window.ZXing.BrowserMultiFormatReader(hints);
+  if (typeof zxing.decodeFromCanvas !== 'function') throw new Error('decoder');
+}
+
+function decodeCanvas(){
+  try {
+    const res = zxing.decodeFromCanvas(canvas);
+    return res ? res.getText() : null;
+  } catch(e){
+    return null;                 // NotFoundException on most frames — expected
+  } finally {
+    try { zxing.reset(); } catch(e){}
+  }
+}
+
+async function tick(){
+  if (!scanning) return;
+  if (paused){ rafId = setTimeout(() => requestAnimationFrame(tick), 250); return; }
+  const v = el.video;
+  if (v.readyState >= 2 && v.videoWidth){
+    // Crop to the reticle band: faster and stops it reading the wrong pack.
+    const cw = v.videoWidth, ch = v.videoHeight;
+    const sx = cw * 0.06, sw = cw * 0.88;
+    const sh = ch * 0.34, sy = (ch - sh) / 2;
+    const scale = Math.min(1, 900 / sw);
+    canvas.width = Math.round(sw * scale);
+    canvas.height = Math.round(sh * scale);
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    let code = null;
+    try {
+      if (detector){
+        const r = await detector.detect(canvas);
+        if (r && r.length) code = r[0].rawValue;
+      } else if (zxing){
+        code = decodeCanvas();
+      }
+    } catch(e){}
+
+    if (code) onCode(code.replace(/\D/g, ''));
+  }
+  rafId = setTimeout(() => requestAnimationFrame(tick), detector ? 90 : 130);
+}
+
+function onCode(code){
+  if (!code || code.length < 8) return;
+  const now = Date.now();
+  if (code === lastCode && now - lastTime < 4000) return;
+  lastCode = code; lastTime = now;
+
+  el.reticle.classList.add('hit');
+  setTimeout(() => el.reticle.classList.remove('hit'), 500);
+  if (navigator.vibrate) navigator.vibrate(25);
+
+  paused = true;                 // hold the camera still while the result is up
+  if (scanning){
+    el.scanBtn.textContent = 'Scan next';
+    el.scanBtn.classList.add('primary'); el.scanBtn.classList.remove('stop');
+  }
+  check(code);
+}
+
+async function check(code){
+  renderLoading(code);
+  try {
+    const { product, offline } = await lookup(code);
+    if (product) render(code, product);
+    else renderNotFound(code, false);
+  } catch(e){
+    if (String(e.message) === 'offline') renderNotFound(code, true);
+    else {
+      paintVerdict(LEVELS.unknown, 'Could not reach the product database. Check your connection, or read the label.');
+      el.pname.textContent = 'Lookup failed';
+      el.pmeta.textContent = code;
+      el.detail.innerHTML = overrideBlock(code) + disclaimerHTML();
+    }
+  }
+}
+
+async function startScan(){
+  if (scanning) return stopScan();
+  el.stageText.textContent = 'Starting the camera…';
+  try {
+    await initDecoder();
+  } catch(e){
+    el.stageText.textContent = 'The barcode reader could not load. You are probably offline — use the 123 button to type the code instead.';
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+  } catch(e){
+    const msg = (e && e.name === 'NotAllowedError')
+      ? 'Camera access was blocked. On iPhone: aA in the address bar → Website Settings → Camera → Allow, then reload. The page must also be served over https.'
+      : (location.protocol !== 'https:' && location.hostname !== 'localhost')
+        ? 'iOS only allows camera access over https. Open this page at an https address.'
+        : 'No camera available. Use the 123 button to type the barcode.';
+    el.stageText.textContent = msg;
+    return;
+  }
+  el.video.srcObject = stream;
+  el.video.setAttribute('playsinline', '');
+  try { await el.video.play(); } catch(e){}
+
+  scanning = true;
+  el.stageMsg.classList.add('hide');
+  el.reticle.hidden = false;
+  el.hint.hidden = false;
+  el.scanBtn.textContent = 'Stop';
+  el.scanBtn.classList.remove('primary'); el.scanBtn.classList.add('stop');
+
+  // Torch, where the browser supports it (not iOS Safari today).
+  const track = stream.getVideoTracks()[0];
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  if (caps && caps.torch){
+    el.torch.style.display = 'flex';
+    el.torch.onclick = async () => {
+      const on = !el.torch.classList.contains('on');
+      try { await track.applyConstraints({ advanced: [{ torch: on }] }); el.torch.classList.toggle('on', on); }
+      catch(e){ toast('Flashlight not available'); }
+    };
+  }
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch(e){}
+
+  tick();
+}
+
+function stopScan(){
+  scanning = false;
+  paused = false;
+  clearTimeout(rafId);
+  if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  el.video.srcObject = null;
+  el.reticle.hidden = true;
+  el.hint.hidden = true;
+  el.torch.style.display = 'none';
+  el.torch.classList.remove('on');
+  el.stageMsg.classList.remove('hide');
+  el.stageText.textContent = 'Camera off. Tap Scan to check another item.';
+  el.scanBtn.textContent = 'Scan';
+  el.scanBtn.classList.add('primary'); el.scanBtn.classList.remove('stop');
+}
+
+/* ============================================================
+   5. WIRING
+   ============================================================ */
+
+el.scanBtn.addEventListener('click', () => {
+  if (scanning && paused){ hideSheet(); return; }   // "Scan next"
+  startScan();
+});
+
+$('#manual-btn').addEventListener('click', () => {
+  $('#manual-panel').classList.add('open');
+  setTimeout(() => $('#code-input').focus(), 60);
+});
+$('#scanLog-btn').addEventListener('click', () => {
+  renderHistory();
+  $('#scanLog-panel').classList.add('open');
+});
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-close]');
+  if (c) document.getElementById(c.dataset.close).classList.remove('open');
+
+  const rc = e.target.closest('[data-recheck]');
+  if (rc){
+    $('#scanLog-panel').classList.remove('open');
+    check(rc.dataset.recheck);
+  }
+
+  const ov = e.target.closest('[data-ov]');
+  if (ov){
+    const code = ov.dataset.code, val = ov.dataset.ov;
+    if (overrides[code] === val) delete overrides[code]; else overrides[code] = val;
+    store.set('gg.overrides', overrides);
+    if (current && current.code === code) render(code, current.product);
+    else renderHistory();
+    toast(overrides[code] ? 'Saved your check for this product' : 'Your note was removed');
+  }
+});
+
+function submitCode(){
+  const v = $('#code-input').value.replace(/\D/g, '');
+  if (v.length < 8){ toast('A barcode is at least 8 digits'); return; }
+  $('#manual-panel').classList.remove('open');
+  check(v);
+}
+$('#code-go').addEventListener('click', submitCode);
+$('#code-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitCode(); });
+
+$('#clear-hist').addEventListener('click', () => {
+  scanLog = []; store.set('gg.history', scanLog); renderHistory(); toast('Scan history cleared');
+});
+
+/* drag the sheet down to dismiss */
+(() => {
+  let y0 = null;
+  const grip = $('#grip');
+  const start = e => { y0 = (e.touches ? e.touches[0].clientY : e.clientY); };
+  const move = e => {
+    if (y0 === null) return;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY);
+    if (y - y0 > 60){ hideSheet(); y0 = null; }
+  };
+  const end = () => { y0 = null; };
+  grip.addEventListener('touchstart', start, { passive: true });
+  grip.addEventListener('touchmove', move, { passive: true });
+  grip.addEventListener('touchend', end);
+  grip.addEventListener('click', hideSheet);
+})();
+
+/* PWA manifest, generated in-page so this stays one file */
+(() => {
+  const icon = "data:image/svg+xml," + encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='#14161A'/><g stroke='#2E9E5B' stroke-width='26' stroke-linecap='round'><path d='M132 148v216M194 148v216M256 148v216M318 148v216M380 148v216'/></g></svg>`);
+  const mf = {
+    name: 'GlutenGuard', short_name: 'GlutenGuard',
+    description: 'Scan a barcode and check a product for gluten.',
+    start_url: '.', display: 'standalone',
+    background_color: '#14161A', theme_color: '#14161A',
+    icons: [{ src: icon, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' }]
+  };
+  try {
+    $('#manifest-link').href = URL.createObjectURL(new Blob([JSON.stringify(mf)], { type: 'application/manifest+json' }));
+  } catch(e){}
+})();
+
+/* stop the camera when the app is backgrounded (battery + privacy) */
+document.addEventListener('visibilitychange', () => { if (document.hidden && scanning) stopScan(); });
+
+/* first-run note */
+if (!store.get('gg.seen', false)){
+  el.stageText.textContent = 'Tap Scan, allow camera access, then hold a barcode inside the frame. Every result is a prompt to check the label, not a substitute for it.';
+  store.set('gg.seen', true);
+}
+</script>
+</body>
+</html>
